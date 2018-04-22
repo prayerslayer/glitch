@@ -135,14 +135,7 @@ fn corrupt(filename: &str, strategy: Strategy) {
                                     };
 
                                     overwrite_count += 1;
-                                    println!("[{:0}]: 0x{:0X}->0x{:0X}", byte_index, b1, nb);
                                 }
-                            } else {
-                                println!(
-                                    "skip byte #{:0}, data starts at {:0}",
-                                    byte_index,
-                                    scan_header_start + scan_header_length
-                                );
                             }
                             nb
                         }
@@ -159,7 +152,6 @@ fn corrupt(filename: &str, strategy: Strategy) {
     let dir : &str = &format!("{}{}", filename, "-bad");
     fs::create_dir_all(dir).expect("cannot create dir");
     let target_filename = format!("{}/{:?}.jpg", dir, strategy);
-    println!("write to: {}", target_filename);
     let mut target = File::create(target_filename).expect("cannot create file");
     target.write_all(result.as_slice());
     target.sync_all();
