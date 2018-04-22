@@ -1,0 +1,6 @@
+[package]
+name = "glitch"
+version = "0.1.0"
+authors = ["Nikolaus Piccolotto <nikolaus.piccolotto@artory.com>"]
+
+[dependencies]
