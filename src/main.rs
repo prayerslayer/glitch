@@ -1,8 +1,8 @@
 extern crate rand;
 
 use rand::distributions::{IndependentSample, Range};
-use std::fs;
 use std::env;
+use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 
@@ -32,7 +32,6 @@ enum OverwriteStrategy {
     RELATIVE_OFFSET,
 }
 
-#[derive(Debug)]
 struct Strategy {
     overwriteStrategy: OverwriteStrategy,
     maxOverwrites: u32,
@@ -40,6 +39,17 @@ struct Strategy {
     maxOverwriteOffset: u8,
     minOverwriteGap: u32,
     maxOverwriteGap: u32,
+}
+
+fn strategy_to_str(strategy: &Strategy) -> Box<str> {
+    let formatted = format!(
+        "{:?}_{:0}_{:0}_{:0}",
+        &strategy.overwriteStrategy,
+        &strategy.maxOverwrites,
+        &strategy.maxOverwriteOffset,
+        &strategy.maxOverwriteGap
+    );
+    return formatted.into_boxed_str();
 }
 
 fn state_machine(state: State, b0: u8, b1: u8) -> State {
@@ -139,7 +149,7 @@ fn corrupt(filename: &str, strategy: Strategy) {
                             }
                             nb
                         }
-                        (_1, _2) => b1,
+                        (_, _) => b1,
                     };
                     state = next_state;
                     result.push(nb)
@@ -149,9 +159,9 @@ fn corrupt(filename: &str, strategy: Strategy) {
         }
     }
 
-    let dir : &str = &format!("{}{}", filename, "-bad");
+    let dir: &str = &format!("{}{}", filename, "-bad");
     fs::create_dir_all(dir).expect("cannot create dir");
-    let target_filename = format!("{}/{:?}.jpg", dir, strategy);
+    let target_filename = format!("{}/{}.jpg", dir, strategy_to_str(&strategy));
     let mut target = File::create(target_filename).expect("cannot create file");
     target.write_all(result.as_slice());
     target.sync_all();
@@ -161,9 +171,12 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = &args[2];
 
-    for max_overwrites_factor in 4..8u32 { // How many bytes to overwrite
-        for max_overwrite_offset_factor in 2..5u8 { // How much to overwrite
-            for offset_factor in 6..12u32 { // gap between overwrites
+    for max_overwrites_factor in 4..8u32 {
+        // How many bytes to overwrite
+        for max_overwrite_offset_factor in 2..5u8 {
+            // How much to overwrite
+            for offset_factor in 6..12u32 {
+                // gap between overwrites
                 let max_overwrites = 2u32.pow(max_overwrites_factor);
                 let min_overwrite_offset = 1;
                 let max_overwrite_offset = (2u8.pow(max_overwrite_offset_factor as u32) - 1) as u8;
@@ -177,6 +190,11 @@ fn main() {
                     minOverwriteGap: min_overwrite_gap,
                     maxOverwriteGap: max_overwrite_gap,
                 };
+                let random_strat = Strategy {
+                    overwriteStrategy: OverwriteStrategy::RANDOM,
+                    ..relative_strat
+                };
+                corrupt(filename, random_strat);
                 corrupt(filename, relative_strat);
             }
         }
