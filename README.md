@@ -14,13 +14,19 @@ Glitches that result from corrupted file data.
 
 #### Corrupted entropy data
 
+**Current implementation**
+
 - find `FFDA` (start of scan) marker in byte stream, two bytes after that are the length, read and skip those
 - until next marker (`FFxx`, but not `FF00`)
   - skip N bytes, where N random from reasonable range (pay attention to [byte stuffing (0xFF00)](https://en.wikipedia.org/wiki/Consistent_Overhead_Byte_Stuffing)
   - overwrite 1 byte with
     - slightly different value (e.g. AB->A7)
     - random byte (probably nicer/heaver glitch but gets corrupted more easily)
-- find next start of scan marker and repeat
+
+**Better implemenation**
+
+Read file twice to figure out start and end of scans, then overwrite N evenly distributed bytes,
+to avoid the "glitch on top and rest of image has bad colors" effect.
 
 ##### Portrait of Giovanni Arnolfini and his Wife
 
