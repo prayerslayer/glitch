@@ -4,7 +4,6 @@ use rand::distributions::{IndependentSample, Range};
 use std::env;
 use std::fs;
 use std::fs::File;
-use std::io;
 use std::io::prelude::*;
 
 fn get_random_u8(min: u8, max: u8) -> u8 {
@@ -14,6 +13,12 @@ fn get_random_u8(min: u8, max: u8) -> u8 {
 }
 
 fn get_random_u32(min: u32, max: u32) -> u32 {
+    let between = Range::new(min, max);
+    let mut rng = rand::thread_rng();
+    return between.ind_sample(&mut rng);
+}
+
+fn get_random_u64(min: u64, max: u64) -> u64 {
     let between = Range::new(min, max);
     let mut rng = rand::thread_rng();
     return between.ind_sample(&mut rng);
@@ -33,22 +38,27 @@ enum OverwriteStrategy {
     RELATIVE_OFFSET,
 }
 
+#[derive(Debug)]
+enum PlacementStrategy {
+    CONSTANT,
+    RANDOM,
+}
+
 struct Strategy {
+    placementStrategy: PlacementStrategy,
     overwriteStrategy: OverwriteStrategy,
-    maxOverwrites: u32,
+    numBytesToOverwrite: u32,
     minOverwriteOffset: u8,
     maxOverwriteOffset: u8,
-    minOverwriteGap: u32,
-    maxOverwriteGap: u32,
 }
 
 fn strategy_to_str(strategy: &Strategy) -> Box<str> {
     let formatted = format!(
-        "{:?}_{:0}_{:0}_{:0}",
+        "{:?}_{:?}_{:0}_{:0}",
+        &strategy.placementStrategy,
         &strategy.overwriteStrategy,
-        &strategy.maxOverwrites,
+        &strategy.numBytesToOverwrite,
         &strategy.maxOverwriteOffset,
-        &strategy.maxOverwriteGap
     );
     return formatted.into_boxed_str();
 }
@@ -66,26 +76,46 @@ fn state_machine(state: State, b0: u8, b1: u8) -> State {
         },
         State::READING_ENTROPY => match (b0, b1) {
             (0xff, 0x00) => State::READING_ENTROPY,
-            (0xff, _) => State::IDLE,
+            (0xff, _) => State::LOOKING_FOR_SOS,
             (_, _) => State::READING_ENTROPY,
         },
         State::IDLE => State::IDLE,
     }
 }
 
+fn get_overwrites(scan_start: u64, scan_end: u64, strategy: &Strategy) -> Vec<u64> {
+    let mut result: Vec<u64> = vec![];
+    match strategy.placementStrategy {
+        PlacementStrategy::CONSTANT => {
+            let interval = (scan_end - scan_start) / (strategy.numBytesToOverwrite as u64);
+            let mut byte_index = scan_start;
+            while byte_index < scan_end {
+                byte_index = byte_index + interval;
+                result.push(byte_index)
+            }
+        }
+        PlacementStrategy::RANDOM => for _ in 0..strategy.numBytesToOverwrite {
+            let mut index = get_random_u64(scan_start, scan_end);
+            while result.contains(&index) {
+                index = get_random_u64(scan_start, scan_end);
+            }
+            result.push(index);
+        },
+    }
+    return result;
+}
+
 fn corrupt_range(content: &Vec<u8>, start: u64, end: u64, strategy: &Strategy) -> Vec<u8> {
-    let mut next_overwrite: u64 =
-        start + (get_random_u32(strategy.minOverwriteGap, strategy.maxOverwriteGap) as u64);
-    let mut overwrite_count: u32 = 0;
+    let indexes_to_overwrite: Vec<u64> = get_overwrites(start, end, &strategy);
     let mut byte_index: u64 = 0;
     let mut result: Vec<u8> = vec![];
 
-    println!("corrupting range: {:0}..{:0}", start, end);
+    println!("corrupting scan: {:0}..{:0}", start, end);
 
     for b1 in content {
         let mut nb: u8 = *b1;
 
-        if byte_index > start && byte_index < end && byte_index == next_overwrite {
+        if byte_index > start && byte_index < end && indexes_to_overwrite.contains(&byte_index) {
             nb = match strategy.overwriteStrategy {
                 OverwriteStrategy::RANDOM => get_random_u8(1, 255),
                 OverwriteStrategy::RELATIVE_OFFSET => {
@@ -94,13 +124,6 @@ fn corrupt_range(content: &Vec<u8>, start: u64, end: u64, strategy: &Strategy) -
                     b1.checked_sub(offset).unwrap_or(*b1)
                 }
             };
-
-            if overwrite_count < strategy.maxOverwrites {
-                next_overwrite = byte_index
-                    + (get_random_u32(strategy.minOverwriteGap, strategy.maxOverwriteGap) as u64);
-            }
-
-            overwrite_count += 1;
         }
 
         byte_index += 1;
@@ -149,7 +172,7 @@ fn find_scans(content: &Vec<u8>) -> Vec<(u64, u64)> {
                         scans.push((scan_start, byte_index - 1))
                     }
                     // Case for multiple scans
-                    (State::READING_ENTROPY, State::READING_HEADER_LENGTH) => {
+                    (State::READING_ENTROPY, State::LOOKING_FOR_SOS) => {
                         scans.push((scan_start, byte_index - 1))
                     }
                     (_, State::READING_HEADER_LENGTH) => {
@@ -174,8 +197,6 @@ fn corrupt(filename: &str, strategy: Strategy) {
     let mut result: Vec<u8> = f.bytes().map(|b| b.unwrap()).collect();
     let scans = find_scans(&result);
 
-    println!("found scans: {:?}", scans);
-
     for (start, end) in scans {
         result = corrupt_range(&result, start, end, &strategy);
     }
@@ -183,50 +204,39 @@ fn corrupt(filename: &str, strategy: Strategy) {
     let dir: &str = &format!("{}{}", filename, "-bad");
     fs::create_dir_all(dir).expect("cannot create dir");
     let target_filename = format!("{}/{}.jpg", dir, strategy_to_str(&strategy));
-    let mut target = File::create(target_filename).expect("cannot create file");
-    target.write_all(result.as_slice());
+    write_to_disk(result, &target_filename);
+}
+
+fn write_to_disk(bytes: Vec<u8>, filename: &str) {
+    let mut target = File::create(filename).expect("cannot create file");
+    target.write_all(bytes.as_slice());
     target.sync_all();
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = &args[2];
-    let relative_strat = Strategy {
-        overwriteStrategy: OverwriteStrategy::RELATIVE_OFFSET,
-        maxOverwrites: 500,
-        minOverwriteOffset: 1,
-        maxOverwriteOffset: 7,
-        minOverwriteGap: 64,
-        maxOverwriteGap: 128,
-    };
-    corrupt(filename, relative_strat);
 
-    // for max_overwrites_factor in 4..8u32 {
-    //     // How many bytes to overwrite
-    //     for max_overwrite_offset_factor in 2..5u8 {
-    //         // How much to overwrite
-    //         for offset_factor in 6..12u32 {
-    //             // gap between overwrites
-    //             let max_overwrites = 2u32.pow(max_overwrites_factor);
-    //             let min_overwrite_offset = 1;
-    //             let max_overwrite_offset = (2u8.pow(max_overwrite_offset_factor as u32) - 1) as u8;
-    //             let min_overwrite_gap = 2u32.pow(offset_factor);
-    //             let max_overwrite_gap = 2u32.pow(offset_factor + 1);
-    //             let relative_strat = Strategy {
-    //                 overwriteStrategy: OverwriteStrategy::RELATIVE_OFFSET,
-    //                 maxOverwrites: max_overwrites,
-    //                 minOverwriteOffset: min_overwrite_offset,
-    //                 maxOverwriteOffset: max_overwrite_offset,
-    //                 minOverwriteGap: min_overwrite_gap,
-    //                 maxOverwriteGap: max_overwrite_gap,
-    //             };
-    //             let random_strat = Strategy {
-    //                 overwriteStrategy: OverwriteStrategy::RANDOM,
-    //                 ..relative_strat
-    //             };
-    //             corrupt(filename, random_strat);
-    //             corrupt(filename, relative_strat);
-    //         }
-    //     }
-    // }
+    // How many bytes to overwrite
+    for num_overwrites in 4..10u32 {
+        // How much to overwrite
+        for max_overwrite_offset_factor in 2..5u8 {
+            let min_overwrite_offset = 1;
+            let max_overwrite_offset = (2u8.pow(max_overwrite_offset_factor as u32) - 1) as u8;
+            let relative_strat = Strategy {
+                placementStrategy: PlacementStrategy::RANDOM,
+                overwriteStrategy: OverwriteStrategy::RELATIVE_OFFSET,
+                numBytesToOverwrite: 2u32.pow(num_overwrites),
+                minOverwriteOffset: min_overwrite_offset,
+                maxOverwriteOffset: max_overwrite_offset,
+            };
+            let random_strat = Strategy {
+                placementStrategy: PlacementStrategy::RANDOM,
+                overwriteStrategy: OverwriteStrategy::RANDOM,
+                ..relative_strat
+            };
+            corrupt(filename, relative_strat);
+            corrupt(filename, random_strat);
+        }
+    }
 }
