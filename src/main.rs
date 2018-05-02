@@ -12,12 +12,6 @@ fn get_random_u8(min: u8, max: u8) -> u8 {
     return between.ind_sample(&mut rng);
 }
 
-fn get_random_u32(min: u32, max: u32) -> u32 {
-    let between = Range::new(min, max);
-    let mut rng = rand::thread_rng();
-    return between.ind_sample(&mut rng);
-}
-
 fn get_random_u64(min: u64, max: u64) -> u64 {
     let between = Range::new(min, max);
     let mut rng = rand::thread_rng();
