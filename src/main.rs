@@ -209,7 +209,10 @@ fn write_to_disk(bytes: Vec<u8>, filename: &str) {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let filename = &args[2];
+    let filename = match args.last() {
+        Some(s) => s,
+        None => panic!("Filename argument is needed")
+    };
 
     // How many bytes to overwrite
     for num_overwrites in 4..10u32 {
