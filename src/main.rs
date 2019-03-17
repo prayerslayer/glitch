@@ -1,21 +1,21 @@
 extern crate rand;
 
-use rand::distributions::{IndependentSample, Range};
+use rand::Rng;
+use rand::distributions::{Uniform, Distribution};
 use std::env;
 use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 
+
 fn get_random_u8(min: u8, max: u8) -> u8 {
-    let between = Range::new(min, max);
-    let mut rng = rand::thread_rng();
-    return between.ind_sample(&mut rng);
+    let dist = Uniform::new(min, max);
+    return rand::thread_rng().sample(dist);
 }
 
 fn get_random_u64(min: u64, max: u64) -> u64 {
-    let between = Range::new(min, max);
-    let mut rng = rand::thread_rng();
-    return between.ind_sample(&mut rng);
+    let dist = Uniform::new(min, max);
+    return rand::thread_rng().sample(dist);
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -203,8 +203,8 @@ fn corrupt(filename: &str, strategy: Strategy) {
 
 fn write_to_disk(bytes: Vec<u8>, filename: &str) {
     let mut target = File::create(filename).expect("cannot create file");
-    target.write_all(bytes.as_slice());
-    target.sync_all();
+    assert!(target.write_all(bytes.as_slice()).is_ok());
+    assert!(target.sync_all().is_ok());
 }
 
 fn main() {
