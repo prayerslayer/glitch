@@ -1,12 +1,11 @@
 extern crate rand;
 
+use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
-use rand::distributions::{Uniform, Distribution};
 use std::env;
 use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
-
 
 fn get_random_u8(min: u8, max: u8) -> u8 {
     let dist = Uniform::new(min, max);
@@ -88,13 +87,15 @@ fn get_overwrites(scan_start: u64, scan_end: u64, strategy: &Strategy) -> Vec<u6
                 result.push(byte_index)
             }
         }
-        PlacementStrategy::RANDOM => for _ in 0..strategy.numBytesToOverwrite {
-            let mut index = get_random_u64(scan_start, scan_end);
-            while result.contains(&index) {
-                index = get_random_u64(scan_start, scan_end);
+        PlacementStrategy::RANDOM => {
+            for _ in 0..strategy.numBytesToOverwrite {
+                let mut index = get_random_u64(scan_start, scan_end);
+                while result.contains(&index) {
+                    index = get_random_u64(scan_start, scan_end);
+                }
+                result.push(index);
             }
-            result.push(index);
-        },
+        }
     }
     return result;
 }
@@ -211,7 +212,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = match args.last() {
         Some(s) => s,
-        None => panic!("Filename argument is needed")
+        None => panic!("Filename argument is needed"),
     };
 
     // How many bytes to overwrite
